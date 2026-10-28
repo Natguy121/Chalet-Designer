@@ -141,7 +141,8 @@
   const V = '(?:add|make|paint|turn|switch|rotate|move|delete|remove|open|close|shut|set|walk|go|show|furnish|rename|change|put|take)\\b';
   function splitChain(q) {
     const m = q.match(/^(add|put|place)\s+(.+?)\s+and\s+(?!then\b)(.+?)(\s+(?:to|in|into|on)\s+.+)?$/i);
-    if (m && !new RegExp('^' + V, 'i').test(m[3])) return [`${m[1]} ${m[2]}${m[4] || ''}`, `${m[1]} ${m[3]}${m[4] || ''}`];
+    if (m && !/between|connect/i.test(q) && !new RegExp('^' + V, 'i').test(m[3])) return [`${m[1]} ${m[2]}${m[4] || ''}`, `${m[1]} ${m[3]}${m[4] || ''}`];
+    if (/\b(between|connect)\b/i.test(q) && !/\bthen\b|;/.test(q)) return [q];
     return q.split(new RegExp(`\\s*(?:;|,?\\s+and then\\s+|,?\\s+then\\s+|,?\\s+and\\s+(?=${V}))\\s*`, 'i')).filter(Boolean);
   }
 
@@ -149,7 +150,7 @@
   function clarify(q) {
     const l = q.toLowerCase().replace(/[?!.]+$/, '').trim(); let m;
     // "add a lamp" with no place → where?
-    if ((m = l.match(/^(?:add|put|place|insert)\s+(?:an?\s+|the\s+|some\s+|another\s+|one\s+)?(.+)$/)) && !/\s(?:in|into|to|on|inside)\s/.test(` ${m[1]} `)) {
+    if ((m = l.match(/^(?:add|put|place|insert)\s+(?:an?\s+|the\s+|some\s+|another\s+|one\s+)?(.+)$/)) && !/\s(?:in|into|to|on|inside|between|connecting)\s/.test(` ${m[1]} `)) {
       const what = m[1], rooms = F().rooms.filter(r => !r.outdoor), room = alive(ASK.lastRoom);
       if (/^(door|window)s?$/.test(what)) {
         say(`Which room should get the ${what.replace(/s$/, '')}?`);
