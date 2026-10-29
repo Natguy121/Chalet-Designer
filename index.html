@@ -2567,7 +2567,7 @@ function sunVector(hour, month, lat) {
   const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(decl) * Math.cos(phi)) + Math.PI; // from north, clockwise
   const azp = az - (P.settings.north || 0) * RAD;   // plan rotated: 'north' is the compass bearing of the plan's up direction
   // plan north = −y (up the screen) → 3D −z; east = +x
-  return { el, az, v: new THREE.Vector3(Math.sin(azp) * Math.cos(el), Math.sin(el), -Math.cos(azp) * Math.cos(el)) };
+  return { el, az, v: THREE ? new THREE.Vector3(Math.sin(azp) * Math.cos(el), Math.sin(el), -Math.cos(azp) * Math.cos(el)) : null };   // no 3D engine (offline): the 2D plan and the assistant still need the sun height
 }
 let envTimer = 0;
 function updateSun(immediate) {
@@ -5000,7 +5000,8 @@ function answer(q) {
   }
   // add / place
   if ((m = l.match(/^(?:add|put|place|insert|i want to add|can you add)\s+(?:an?\s+|the\s+|some\s+|another\s+|one\s+|\d+\s+)?(.+?)(?:\s+(?:in|into|to|on|inside)\s+(?:the\s+)?(.+))?$/))) {
-    const lib = search(m[1], ['lib'])[0]; if (!lib) return say(`I don’t have anything like “${esc(m[1])}” in the library. Try other words — e.g. “sofa”, “desk”, “ceiling light”.`);
+    const lib0 = search(m[1], ['lib'])[0], lib = lib0 && lib0.score >= 2.5 ? lib0 : null;
+    if (!lib) return say(`I’m not sure what “${esc(m[1])}” is.${lib0 ? ` Did you mean ${article(lib0.L.name)} <b>${esc(lib0.L.name.toLowerCase())}</b>?` : ''} Try a simpler word — e.g. “sofa”, “desk”, “ceiling light”, or “add a door to the kitchen”.`, lib0 ? [lib0] : []);
     let room = null, rf = F(), rfi = S.floor;
     if (m[2]) { const r = search(m[2], ['room'])[0]; if (!r) return say(`I couldn’t find a room called “${esc(m[2])}”.`); room = r.r; rf = r.f; rfi = r.fi; }
     const it = addThing(lib.L, room, rf, rfi), alt = search(m[1], ['lib']).slice(1, 4);
@@ -5181,7 +5182,7 @@ document.addEventListener('keydown', e => {
   const V = '(?:add|make|paint|turn|switch|rotate|move|delete|remove|open|close|shut|set|walk|go|show|furnish|rename|change|put|take)\\b';
   function splitChain(q) {
     const m = q.match(/^(add|put|place)\s+(.+?)\s+and\s+(?!then\b)(.+?)(\s+(?:to|in|into|on)\s+.+)?$/i);
-    if (m && !/between|connect/i.test(q) && !new RegExp('^' + V, 'i').test(m[3])) return [`${m[1]} ${m[2]}${m[4] || ''}`, `${m[1]} ${m[3]}${m[4] || ''}`];
+    if (m && !/between|connect|\b(doors?|windows?|walls?|sides?)\b/i.test(q) && !new RegExp('^' + V, 'i').test(m[3])) return [`${m[1]} ${m[2]}${m[4] || ''}`, `${m[1]} ${m[3]}${m[4] || ''}`];
     if (/\b(between|connect)\b/i.test(q) && !/\bthen\b|;/.test(q)) return [q];
     return q.split(new RegExp(`\\s*(?:;|,?\\s+and then\\s+|,?\\s+then\\s+|,?\\s+and\\s+(?=${V}))\\s*`, 'i')).filter(Boolean);
   }
@@ -5190,13 +5191,14 @@ document.addEventListener('keydown', e => {
   function clarify(q) {
     const l = q.toLowerCase().replace(/[?!.]+$/, '').trim(); let m;
     // "add a lamp" with no place → where?
-    if ((m = l.match(/^(?:add|put|place|insert)\s+(?:an?\s+|the\s+|some\s+|another\s+|one\s+)?(.+)$/)) && !/\s(?:in|into|to|on|inside|between|connecting)\s/.test(` ${m[1]} `)) {
+    if ((m = l.match(/^(?:add|put|place|insert)\s+(?:an?\s+|the\s+|some\s+|another\s+|one\s+)?(.+)$/)) && !/\s(?:in|into|to|on|inside|between|connecting)\s/.test(` ${m[1]} `) && !/\b(doors?|windows?|doorways?|openings?|arch(es)?)\b/.test(m[1]) && !/^(\d+|two|three|four|five|six|seven|eight|nine|ten|couple|pair|few|several)\b/.test(m[1])) {
       const what = m[1], rooms = F().rooms.filter(r => !r.outdoor), room = alive(ASK.lastRoom);
       if (/^(door|window)s?$/.test(what)) {
         say(`Which room should get the ${what.replace(/s$/, '')}?`);
         chips(rooms.slice(0, 12).map(r => [r.name, `add a ${what.replace(/s$/, '')} to the ${r.name}`])); return true;
       }
-      const lib = search(what, ['lib'])[0]; if (!lib) return false;
+      const lib = search(what, ['lib'])[0]; if (!lib || lib.score < 2.5) return false;
+      if (rooms.length === 1 && P.floors.length === 1) return false;     // only one room: just put it there
       say(`Where should the <b>${esc(lib.L.name.toLowerCase())}</b> go?`);
       chips([...(room ? [[`★ ${room.name}`, `add ${what} to the ${room.name}`]] : []),
              ...rooms.filter(r => !room || r.id !== room.r.id).slice(0, 10).map(r => [r.name, `add ${what} to the ${r.name}`]),
@@ -5204,7 +5206,7 @@ document.addEventListener('keydown', e => {
       return true;
     }
     // "delete the nightstand" when there are several → which one?
-    if ((m = l.match(/^(?:delete|remove|get rid of) (?:the )?(.+)$/)) && !/roof/.test(m[1])) {
+    if ((m = l.match(/^(?:delete|remove|get rid of) (?:the )?(.+)$/)) && !/roof|\b(doors?|windows?|openings?|furniture|all)\b/.test(m[1])) {
       const hits = search(m[1], ['item']);
       if (hits.length > 1 && hits[1].score >= hits[0].score - .5) {
         const same = hits.filter(h => h.score >= hits[0].score - .5).slice(0, 8);
@@ -5538,10 +5540,175 @@ document.addEventListener('keydown', e => {
     say(best.a + ' <span class="muted">(Rule of thumb — always check local code and a licensed professional.)</span>'); return true;
   }
 
+  /* ---------- doors & windows by count and by wall side ----------
+     "add 4 doors, one on each side of the room", "put 2 windows on the north wall of the kitchen",
+     "add a window on the left and right walls", "remove all the doors from bedroom 2", "how many windows does the office have" */
+  const WORDNUM = { a: 1, an: 1, one: 1, single: 1, two: 2, couple: 2, pair: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, several: 3, few: 2 };
+  const toNum = w => w == null ? null : /^\d+$/.test(w) ? +w : WORDNUM[w] ?? null;
+  const SIDE_WORD = { north: 'north', top: 'north', back: 'north', upper: 'north', south: 'south', bottom: 'south', front: 'south', lower: 'south', east: 'east', right: 'east', west: 'west', left: 'west' };
+  const SIDE_ORDER = ['north', 'east', 'south', 'west'];
+  const SIDE_NAME = { north: 'top (north)', south: 'bottom (south)', east: 'right (east)', west: 'left (west)' };
+  /** the stretches of wall around a room, each tagged with the side of the room it is on */
+  function roomSides(f, r) {
+    const [cx, cy] = interiorPoint(r.poly), out = [];
+    for (const w of f.walls) {
+      const L = wallLen(w), [dx, dy] = wallDir(w), lim = (w.thick || 20) / 2 + 8; let t0 = null, t1 = null;
+      for (let t = 5; t < L - 5; t += 5) { const x = w.a[0] + dx * t, y = w.a[1] + dy * t; if (edgeDist(r.poly, x, y) < lim) { if (t0 === null) t0 = t; t1 = t; } }
+      if (t0 === null || t1 - t0 < 60) continue;
+      const mx = w.a[0] + dx * (t0 + t1) / 2, my = w.a[1] + dy * (t0 + t1) / 2, ex = mx - cx, ey = my - cy;
+      const side = Math.abs(ex) > Math.abs(ey) ? (ex > 0 ? 'east' : 'west') : (ey > 0 ? 'south' : 'north');
+      const sd = wallSides(f, w);
+      out.push({ w, t0, t1, side, ext: !(sd.l && sd.r) });
+    }
+    return out;
+  }
+  /** put n openings spread evenly along one stretch of wall; returns how many fitted */
+  function placeOn(f, s, kind, n, spec) {
+    const span = s.t1 - s.t0, base = makeOpening(spec || kind), width = Math.min(base.width, span / n - 20);
+    if (width < (kind === 'door' ? 60 : 40)) return 0;
+    const taken = f.openings.filter(q => q.wallId === s.w.id); let placed = 0;
+    const lo = s.t0 + width / 2 + 5, hi = s.t1 - width / 2 - 5, free = t => t >= lo && t <= hi && !taken.some(q => Math.abs(q.t - t) < (q.width + width) / 2 + 10);
+    for (let i = 0; i < n; i++) {
+      const ideal = s.t0 + span * (i + .5) / n; let t = null;
+      for (let d = 0; d <= span && t === null; d += 10) { if (free(ideal + d)) t = ideal + d; else if (free(ideal - d)) t = ideal - d; }   // slide along to the nearest free spot
+      if (t === null) continue;
+      const o = makeOpening(spec || kind); o.width = Math.round(width); o.wallId = s.w.id; o.t = t; f.openings.push(o); taken.push(o); placed++;
+    }
+    return placed;
+  }
+  /** which room a sentence is about: a room named in it, else the selected / last-mentioned room, else the only room */
+  function roomInText(l) {
+    let best = null;
+    P.floors.forEach((f, fi) => f.rooms.forEach(r => { const n = r.name.toLowerCase(); if (l.includes(n) && (!best || n.length > best.name.length)) best = { kind: 'room', f, fi, r, name: r.name }; }));
+    if (best) return best;
+    const m = l.match(/\b(?:to|in|into|of|for|on|from|around) (?:the |my )?([a-z][a-z0-9 &'-]+?)(?:'s)?(?: walls?| sides?)?$/);
+    const generic = /^(room|this room|that room|it|here|there|wall|walls|side|sides|house|plan|middle|centre|center|corner|end|outside|inside)$|\b(north|south|east|west|left|right|top|bottom|front|back|upper|lower|each|every|all|both|around|other)(ern)?\b/;
+    if (m && !generic.test(m[1])) { const r = search(m[1], ['room'])[0]; if (r && r.score >= 3) return r; return { missing: m[1] }; }
+    return null;
+  }
+  function contextOrOnlyRoom() {
+    const c = contextRoom(); if (c) return c;
+    const last = ASK.lastRoom && P.floors.find(f => f.id === ASK.lastRoom.f.id);
+    if (last) { const r = last.rooms.find(q => q.id === ASK.lastRoom.r.id); if (r) return { kind: 'room', f: last, fi: P.floors.indexOf(last), r, name: r.name }; }
+    const only = F().rooms.filter(r => !r.outdoor); return only.length === 1 ? { kind: 'room', f: F(), fi: S.floor, r: only[0], name: only[0].name } : null;
+  }
+  function askWhichRoom(q, l) {
+    const rooms = P.floors.flatMap((f, fi) => f.rooms.filter(r => !r.outdoor).map(r => ({ f, fi, r })));
+    if (!rooms.length) { say('There are no rooms yet. Draw walls (W) or say “design a chalet with 3 bedrooms” first.'); return true; }
+    say('Which room?');
+    const base = q.replace(/\s+(?:to|in|into|of|for|on|around) (?:the |this |that )?room$/i, '').replace(/[?.!]+$/, '');
+    buttons(rooms.slice(0, 14).map(x => [x.r.name, `${base} in the ${x.r.name}`]));
+    return true;
+  }
+  function openingCmd(q, l) {
+    let m;
+    const kindM = l.match(/\b(doors?|doorways?|windows?|openings?|arch(?:es|way)?s?|skylights?)\b/); if (!kindM) return false;
+    const kw = kindM[1], kind = /window|skylight/.test(kw) ? 'window' : 'door';
+    const spec = /arch/.test(kw) ? 'arch' : /sliding/.test(l) ? (kind === 'door' ? 'door-sliding' : 'window-sliding') : /french/.test(l) ? 'door-french' : /double/.test(l) ? (kind === 'door' ? 'door-double' : 'window-double') : /pocket/.test(l) ? 'door-pocket' : /garage/.test(l) ? 'garage-door' : /picture|big|large|panoramic/.test(l) && kind === 'window' ? 'window-picture' : /bay/.test(l) ? 'window-bay' : kind;
+    if (/skylight/.test(kw)) return false;
+
+    // how many doors / windows does X have
+    if (/^how many\b/.test(l)) {
+      let r = roomInText(l); if (r && r.missing) return say(`I couldn’t find a room called “${esc(r.missing)}”.`), true; r = r || (/\b(the room|this room|it)\b/.test(l) ? contextOrOnlyRoom() : null);
+      const list = r ? openingsOfRoom(r.f, r.r) : P.floors.flatMap(f => f.openings), n = list.filter(o => o.kind === kind).length;
+      say(`${r ? 'The ' + esc(r.name) + ' has' : 'The house has'} ${n} ${kind}${n === 1 ? '' : 's'}.`); return true;
+    }
+    // remove / delete doors or windows from a room (proposed, not executed)
+    if (/^(remove|delete|take out|take away|get rid of|close up|brick up|fill in)\b/.test(l)) {
+      const r0 = roomInText(l); if (r0 && r0.missing) { say(`I couldn’t find a room called “${esc(r0.missing)}”.`, search(r0.missing, ['room']).slice(0, 4)); return true; }
+    const r = r0 || contextOrOnlyRoom(); if (!r) return askWhichRoom(q, l);
+      let sides = Object.keys(SIDE_WORD).filter(w => new RegExp(`\\b${w}\\b`).test(l)).map(w => SIDE_WORD[w]);
+      const spans = roomSides(r.f, r.r).filter(s => !sides.length || sides.includes(s.side)), ids = new Set(spans.map(s => s.w.id));
+      const hit = openingsOfRoom(r.f, r.r).filter(o => o.kind === kind && ids.has(o.wallId) && spans.some(s => s.w.id === o.wallId && o.t >= s.t0 - 5 && o.t <= s.t1 + 5));
+      if (!hit.length) { say(`The ${esc(r.name)} has no ${kind}s${sides.length ? ' on that side' : ''} to remove.`); return true; }
+      say(`Remove <b>${hit.length} ${kind}${hit.length > 1 ? 's' : ''}</b> from the ${esc(r.name)}${sides.length ? ' (' + sides.map(s => SIDE_NAME[s]).join(', ') + ')' : ''}? ${kind === 'door' && hit.length === openingsOfRoom(r.f, r.r).filter(o => o.kind === 'door').length ? 'The room will have no way in.' : ''}`);
+      buttons([[`Remove ${hit.length}`, () => { edit(() => { const del = new Set(hit.map(o => o.id)); r.f.openings = r.f.openings.filter(o => !del.has(o.id)); }); S.sel = []; onSelection(); say(`Removed ${hit.length} ${kind}${hit.length > 1 ? 's' : ''} from the ${esc(r.name)}.`); }], ['Cancel', () => say('OK, nothing removed.')]]);
+      return true;
+    }
+    if (!/^(add|put|place|insert|make|create|give|cut|open up|i want|i need|can you add|could you add|please add|we need)\b/.test(l)) return false;
+    if (/\b(between|connect|connecting|joining)\b/.test(l)) return false;            // handled by "door between X and Y"
+    const sidePhrase = /\b(each|every|all(?: the)?|all four|all 4|both) (sides?|walls?)\b|\b(on|in) (each|every) (side|wall)\b|\ball around\b|\baround the room\b/;
+    const plainLess = l.replace(sidePhrase, '');
+    if (/\b(every|each|all)\b/.test(plainLess) && /\brooms?\b|bedrooms?|bathrooms?|kitchens?/.test(plainLess)) return false;   // "a window in every bedroom" → batch command
+    const nM = l.match(/\b(\d+|a|an|one|single|two|couple(?: of)?|pair(?: of)?|three|four|five|six|seven|eight|nine|ten|twelve|several|few)\s+(?:more\s+|new\s+|extra\s+|big\s+|large\s+|small\s+|double\s+|sliding\s+|french\s+|pocket\s+|picture\s+|wide\s+)*(?:doors?|doorways?|windows?|openings?|arch)/);
+    const n = Math.min(24, toNum(nM && nM[1].replace(/ of$/, '')) || 1);
+    const r0 = roomInText(l); if (r0 && r0.missing) { say(`I couldn’t find a room called “${esc(r0.missing)}”.`, search(r0.missing, ['room']).slice(0, 4)); return true; }
+    const r = r0 || contextOrOnlyRoom(); if (!r) return askWhichRoom(q, l);
+    let spans = roomSides(r.f, r.r);
+    if (!spans.length) { say(`The ${esc(r.name)} has no walls around it to put a ${kind} in. Draw walls along its edges first.`); return true; }
+    const named = [...new Set(Object.keys(SIDE_WORD).filter(w => new RegExp(`\\b${w}(?:ern)?\\b`).test(l)).map(w => SIDE_WORD[w]))];
+    const perSide = /\bper (side|wall)\b|\b(each|apiece)$/.test(l);
+    const eachSide = sidePhrase.test(l) || perSide;
+    const total = /\b(in total|total|altogether|spread|around|distributed)\b/.test(l);
+    if (kind === 'window' && !named.length) { const ext = spans.filter(s => s.ext); if (ext.length) spans = ext; }
+    // group the spans by side, longest stretch first
+    const bySide = {}; for (const s of spans) (bySide[s.side] = bySide[s.side] || []).push(s);
+    for (const k in bySide) bySide[k].sort((a, b) => (b.t1 - b.t0) - (a.t1 - a.t0));
+    let sides = named.length ? named : eachSide ? SIDE_ORDER.filter(s => bySide[s]) : null;
+    const missing = named.filter(s => !bySide[s]);
+    if (missing.length) { say(`The ${esc(r.name)} has no wall on its ${missing.map(s => SIDE_NAME[s]).join(' or ')} side${kind === 'window' ? ' that faces outside' : ''}. Its walls are on the ${Object.keys(bySide).map(s => SIDE_NAME[s]).join(', ')}.`); return true; }
+    if (eachSide && n > 1 && !perSide && !total && n !== sides.length) {
+      // "4 doors from each side" — ask whether that is n per side or n in total
+      say(`Do you mean <b>${n} ${kind}s on every side</b> of the ${esc(r.name)} (${n * sides.length} in total), or <b>${n} in total</b> spread around its ${sides.length} sides?`);
+      const what = spec !== kind ? `${OPEN_DEF[spec].type} ${kind}s` : `${kind}s`;
+      buttons([[`${n} on every side (${n * sides.length})`, `add ${n} ${what} per side in the ${r.name}`], [`${n} in total`, `add ${n} ${what} spread around the ${r.name}`], ['Cancel', () => say('OK, nothing added.')]]);
+      return true;
+    }
+    // work out how many go on each side
+    const plan = {};
+    if (sides && (perSide || (eachSide && (n === 1 || n === sides.length || !total)))) {
+      const k = perSide ? n : eachSide && n === sides.length ? 1 : n; for (const s of sides) plan[s] = k;
+    } else if (sides) { const k = total ? n : Math.max(n, sides.length); for (let i = 0; i < k; i++) { const s = sides[i % sides.length]; plan[s] = (plan[s] || 0) + 1; } }   // "a door on the north and south walls" = one on each
+    else if (total || n > 1) {                      // spread round the room, longest walls first, exterior first for windows
+      const order = SIDE_ORDER.filter(s => bySide[s]).sort((a, b) => (bySide[b][0].t1 - bySide[b][0].t0) - (bySide[a][0].t1 - bySide[a][0].t0));
+      for (let i = 0; i < n; i++) { const s = order[i % order.length]; plan[s] = (plan[s] || 0) + 1; }
+    } else {                                         // one opening, best wall: exterior for windows, interior for doors
+      const pick = spans.slice().sort((a, b) => ((kind === 'door' ? a.ext - b.ext : b.ext - a.ext)) || ((b.t1 - b.t0) - (a.t1 - a.t0)))[0];
+      plan[pick.side] = 1; bySide[pick.side] = [pick, ...bySide[pick.side].filter(s => s !== pick)];
+    }
+    let placed = 0; const done = [];
+    edit(() => { for (const [side, k] of Object.entries(plan)) { let left = k;
+      for (const s of bySide[side]) { if (left <= 0) break; const p = placeOn(r.f, s, kind, left, spec); placed += p; left -= p; }
+      if (k - left > 0) done.push(`${k - left} on the ${SIDE_NAME[side]}`); } });
+    if (r.fi !== S.floor) { S.floor = r.fi; refreshFloors(); }
+    ASK.last = { kind: 'room', f: r.f, fi: r.fi, r: r.r, name: r.r.name }; ASK.lastRoom = ASK.last; showThing(ASK.last);
+    const wanted = Object.values(plan).reduce((a, b) => a + b, 0), nm = `${kind}${placed === 1 ? '' : 's'}`;
+    if (!placed) { say(`There’s no free space for ${wanted === 1 ? 'a' : wanted} ${kind}${wanted === 1 ? '' : 's'} there — the walls are too short or already have openings.`); return true; }
+    say(`Added ${placed} ${spec !== kind ? esc(OPEN_DEF[spec].type) + ' ' : ''}${nm} to the ${esc(r.name)}: ${done.join(', ')}.${placed < wanted ? ` Only ${placed} of ${wanted} fitted — the rest of the wall is too short or taken.` : ''} Select one to change its size, swing or style.`);
+    return true;
+  }
+  /** best library item for a phrase: highest score, then the one whose name ends in a word you used, then the shortest name */
+  function bestLib(text) {
+    const T = terms(text), phrase = text.trim();                      // score every library item (search() drops near-misses we want to compare)
+    const res = candidates().filter(c => c.kind === 'lib').map(c => Object.assign(c, { score: scoreText(c.text, T, phrase).s })).filter(c => c.score >= 2.5).sort((a, b) => b.score - a.score);
+    if (!res.length) return null;
+    const top = res[0].score, said = new Set(words(text)), tie = res.filter(c => c.score >= top - .01);
+    const tie2 = res.filter(c => c.score >= top - 4.01), extra = c => words(c.L.name).filter(w => !said.has(w)).length;   // 4 = the literal-phrase bonus
+    tie2.sort((x, y) => (said.has(y.L.id) - said.has(x.L.id)) || (said.has(sing(words(y.L.name).pop())) - said.has(sing(words(x.L.name).pop()))) || extra(x) - extra(y) || y.score - x.score || x.L.name.length - y.L.name.length);
+    return tie2[0];
+    return tie[0];
+  }
+  /** "add 4 chairs to the kitchen", "add a couple of floor lamps", "add a sofa" when there is only one room */
+  function countedItems(q, l) {
+    const m = l.match(/^(?:add|put|place|insert|i need|i want|give me)\s+(?:a\s+)?(?:(\d+|two|three|four|five|six|seven|eight|nine|ten|twelve|couple of|pair of|few|several)\s+)?(.+?)(?:\s+(?:in|into|to|on|inside)\s+(?:the\s+)?(.+))?$/);
+    if (!m) return false;
+    const counted = !!m[1], lib = bestLib(m[2]);
+    if (!lib || lib.score < 2.5) return false;
+    const indoor = P.floors.flatMap(f => f.rooms.filter(r => !r.outdoor));
+    if (!counted && (m[3] || indoor.length !== 1)) return false;            // the normal "add a sofa" path asks where
+    const n = counted ? Math.min(20, toNum(m[1].replace(/ of$/, '')) || 2) : 1;
+    const r = m[3] ? search(m[3], ['room'])[0] : contextOrOnlyRoom();
+    if (m[3] && !r) { say(`I couldn’t find a room called “${esc(m[3])}”.`); return true; }
+    if (!r) return askWhichRoom(q, l);
+    for (let i = 0; i < n; i++) addThing(lib.L, r.r, r.f, r.fi);
+    say(n === 1 ? `Added ${article(lib.L.name)} <b>${esc(lib.L.name.toLowerCase())}</b> to the ${esc(r.name)}. Drag it into place or change its size on the right.` : `Added ${n} × ${esc(lib.L.name.toLowerCase())} to the ${esc(r.name)}. They’re placed in free spots — drag them where you like.`); return true;
+  }
+
   /* ---------- the new commands ---------- */
   function extra(q) {
     const l = q.toLowerCase().replace(/[?!.]+$/, '').trim(); let m;
     if (/^help$/.test(l)) { setTimeout(() => say('New: <b>“design a chalet with 3 bedrooms, a sauna and a garage”</b>, “show me 3 layout variants”, “add a door between the kitchen and the hall”, “add a window to every bedroom”, “make it a bit bigger”, “move it 1 m to the left”, “lock the bathroom”, “save this as version B”, “compare versions”, “what did you just change?”, “restore last version”, “delete the whole house” (asks first), plus building questions like “what roof angle is best for snow?”.'), 0); return false; }
+    if (openingCmd(q, l) || countedItems(q, l)) return true;
 
     // generation
     if (/\b(variants?|options|alternatives|layouts)\b/.test(l) && /\b(3|three|some|several|layout|show|give|suggest)\b/.test(l) && !/^(how|where)/.test(l)) {

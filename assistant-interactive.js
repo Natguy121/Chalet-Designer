@@ -141,7 +141,7 @@
   const V = '(?:add|make|paint|turn|switch|rotate|move|delete|remove|open|close|shut|set|walk|go|show|furnish|rename|change|put|take)\\b';
   function splitChain(q) {
     const m = q.match(/^(add|put|place)\s+(.+?)\s+and\s+(?!then\b)(.+?)(\s+(?:to|in|into|on)\s+.+)?$/i);
-    if (m && !/between|connect/i.test(q) && !new RegExp('^' + V, 'i').test(m[3])) return [`${m[1]} ${m[2]}${m[4] || ''}`, `${m[1]} ${m[3]}${m[4] || ''}`];
+    if (m && !/between|connect|\b(doors?|windows?|walls?|sides?)\b/i.test(q) && !new RegExp('^' + V, 'i').test(m[3])) return [`${m[1]} ${m[2]}${m[4] || ''}`, `${m[1]} ${m[3]}${m[4] || ''}`];
     if (/\b(between|connect)\b/i.test(q) && !/\bthen\b|;/.test(q)) return [q];
     return q.split(new RegExp(`\\s*(?:;|,?\\s+and then\\s+|,?\\s+then\\s+|,?\\s+and\\s+(?=${V}))\\s*`, 'i')).filter(Boolean);
   }
@@ -150,13 +150,14 @@
   function clarify(q) {
     const l = q.toLowerCase().replace(/[?!.]+$/, '').trim(); let m;
     // "add a lamp" with no place → where?
-    if ((m = l.match(/^(?:add|put|place|insert)\s+(?:an?\s+|the\s+|some\s+|another\s+|one\s+)?(.+)$/)) && !/\s(?:in|into|to|on|inside|between|connecting)\s/.test(` ${m[1]} `)) {
+    if ((m = l.match(/^(?:add|put|place|insert)\s+(?:an?\s+|the\s+|some\s+|another\s+|one\s+)?(.+)$/)) && !/\s(?:in|into|to|on|inside|between|connecting)\s/.test(` ${m[1]} `) && !/\b(doors?|windows?|doorways?|openings?|arch(es)?)\b/.test(m[1]) && !/^(\d+|two|three|four|five|six|seven|eight|nine|ten|couple|pair|few|several)\b/.test(m[1])) {
       const what = m[1], rooms = F().rooms.filter(r => !r.outdoor), room = alive(ASK.lastRoom);
       if (/^(door|window)s?$/.test(what)) {
         say(`Which room should get the ${what.replace(/s$/, '')}?`);
         chips(rooms.slice(0, 12).map(r => [r.name, `add a ${what.replace(/s$/, '')} to the ${r.name}`])); return true;
       }
-      const lib = search(what, ['lib'])[0]; if (!lib) return false;
+      const lib = search(what, ['lib'])[0]; if (!lib || lib.score < 2.5) return false;
+      if (rooms.length === 1 && P.floors.length === 1) return false;     // only one room: just put it there
       say(`Where should the <b>${esc(lib.L.name.toLowerCase())}</b> go?`);
       chips([...(room ? [[`★ ${room.name}`, `add ${what} to the ${room.name}`]] : []),
              ...rooms.filter(r => !room || r.id !== room.r.id).slice(0, 10).map(r => [r.name, `add ${what} to the ${r.name}`]),
@@ -164,7 +165,7 @@
       return true;
     }
     // "delete the nightstand" when there are several → which one?
-    if ((m = l.match(/^(?:delete|remove|get rid of) (?:the )?(.+)$/)) && !/roof/.test(m[1])) {
+    if ((m = l.match(/^(?:delete|remove|get rid of) (?:the )?(.+)$/)) && !/roof|\b(doors?|windows?|openings?|furniture|all)\b/.test(m[1])) {
       const hits = search(m[1], ['item']);
       if (hits.length > 1 && hits[1].score >= hits[0].score - .5) {
         const same = hits.filter(h => h.score >= hits[0].score - .5).slice(0, 8);
