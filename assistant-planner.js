@@ -539,4 +539,6 @@
     // knowledge questions
     return faq(l);
   }
+  // shared with the AI assistant (part 4)
+  ASK.api = { openingCmd, roomSides, placeOn, genPlan, briefOf, proposePlan, typedConfirm, saveVersion, compareVersions, counts, diff, noteChange, tracked, buttons, roomItems, furnishAll, bestLib, costOf, areaOf };
 })();
